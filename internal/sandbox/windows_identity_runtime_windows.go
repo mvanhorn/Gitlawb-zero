@@ -63,17 +63,26 @@ func windowsSandboxWorkspaceKey(workspaceRoots []string) string {
 // machine with nothing provisioned the lookup declines anyway, which would let a
 // missing guard here pass unnoticed.
 func windowsSandboxPrincipalEligible(config WindowsSandboxCommandConfig) bool {
-	if !windowsSandboxIdentityEnabled(config.Env) {
-		return false
+	return windowsSandboxIdentityEnabled(config.Env)
+}
+
+// windowsSandboxRoleForNetwork maps a command's network mode onto the principal
+// that enforces it.
+//
+// The two roles differ only in membership of the offline group, which the block
+// filters are keyed to. That indirection exists because network denial cannot be
+// expressed on a logon token the way it is on a restricted token: the restricted
+// token carries the offline-marker SID as a restricting SID, and LogonUser has
+// no equivalent, since it builds a token from the account's real memberships.
+//
+// Defaulting anything that is not an explicit allow to the offline principal is
+// deliberate. A mode this does not recognise should lose the network, not keep
+// it.
+func windowsSandboxRoleForNetwork(mode NetworkMode) windowsSandboxRole {
+	if mode == NetworkAllow {
+		return windowsSandboxRoleOnline
 	}
-	// Network denial is enforced by WFP filters keyed to the offline-marker SID,
-	// which the restricted token carries and a principal token cannot: LogonUser
-	// mints a token for the account, not for a synthetic capability SID. Using a
-	// principal here would leave those filters matching nothing and silently drop
-	// network enforcement, which is a worse trade than the read confinement it
-	// buys. Fall back to the restricted token, which still enforces the network,
-	// until the filters are also keyed to the principal's own SID.
-	return config.PermissionProfile.Network.Mode != NetworkDeny
+	return windowsSandboxRoleOffline
 }
 
 // windowsSandboxPrincipalToken returns a token for this workspace's sandbox
@@ -89,7 +98,11 @@ func windowsSandboxPrincipalToken(config WindowsSandboxCommandConfig) (windows.T
 		return 0, false, nil
 	}
 	key := windowsSandboxWorkspaceKey(config.WorkspaceRoots)
-	identity, err := lookupWindowsSandboxIdentity(key)
+	// The network mode picks the principal. Both are provisioned by setup; the
+	// offline one is in the group the block filters match, so choosing here is
+	// what enforces the mode.
+	role := windowsSandboxRoleForNetwork(config.PermissionProfile.Network.Mode)
+	identity, err := lookupWindowsSandboxIdentity(key, role)
 	if err != nil {
 		if errors.Is(err, errWindowsSandboxIdentityUnavailable) {
 			// Not provisioned: fall back quietly, this is the default state.
@@ -129,9 +142,9 @@ func windowsSandboxPrincipalToken(config WindowsSandboxCommandConfig) (windows.T
 // The password is written BEFORE the caller applies any ACL plan, so a setup
 // that fails partway leaves a principal that can at least be logged on and
 // therefore cleaned up, rather than an account nothing holds the secret for.
-func provisionWindowsSandboxPrincipalForSetup(config WindowsSandboxCommandConfig) (windowsSandboxIdentity, error) {
+func provisionWindowsSandboxPrincipalForSetup(config WindowsSandboxCommandConfig, role windowsSandboxRole) (windowsSandboxIdentity, error) {
 	key := windowsSandboxWorkspaceKey(config.WorkspaceRoots)
-	identity, password, created, err := provisionWindowsSandboxIdentity(key)
+	identity, password, created, err := provisionWindowsSandboxIdentity(key, role)
 
 	// Undo whatever this run actually did, in reverse, on any failure after the
 	// account exists. Without it a failure between creating the account and
@@ -205,47 +218,69 @@ func provisionWindowsSandboxPrincipalForSetup(config WindowsSandboxCommandConfig
 // naming a SID that no longer resolves, which is the orphaned-entry residue this
 // model exists to avoid.
 func setupWindowsSandboxPrincipal(config WindowsSandboxCommandConfig) (func() error, error) {
-	identity, err := provisionWindowsSandboxPrincipalForSetup(config)
-	if err != nil {
-		return nil, err
+	// Both roles are provisioned regardless of the profile this setup ran with.
+	// Setup needs elevation and a command does not, so a command whose network
+	// mode differs from the one setup happened to see must still find a principal
+	// waiting; provisioning lazily would mean an unelevated command discovering it
+	// needs an account it cannot create.
+	roles := []windowsSandboxRole{windowsSandboxRoleOffline, windowsSandboxRoleOnline}
+
+	var undo []func() error
+	rollback := func() error {
+		// Unwind in reverse, and keep going after a failure so one broken step
+		// cannot strand everything behind it. The first error is reported.
+		var firstErr error
+		for i := len(undo) - 1; i >= 0; i-- {
+			if err := undo[i](); err != nil && firstErr == nil {
+				firstErr = err
+			}
+		}
+		return firstErr
 	}
-	removePrincipal := func() error { return removeWindowsSandboxPrincipalForSetup(config) }
 
 	filesystem := config.PermissionProfile.FileSystem
-	plan, err := buildWindowsPrincipalACLPlan(windowsPrincipalACLInput{
-		PrincipalSID: identity.SID.String(),
-		WriteRoots:   filesystem.WriteRoots,
-		ReadRoots:    filesystem.ReadRoots,
-		DenyRead:     filesystem.DenyRead,
-	})
-	if err != nil {
-		_ = removePrincipal()
-		return nil, err
-	}
-	revertACL, err := applyWindowsACLPlan(plan)
-	if err != nil {
-		_ = removePrincipal()
-		return nil, err
-	}
-	return func() error {
-		aclErr := revertACL()
-		// Remove the principal even when the ACL revert failed, so a broken
-		// rollback does not also strand an account; report the ACL error since it
-		// is the one that leaves state behind.
-		removeErr := removePrincipal()
-		if aclErr != nil {
-			return aclErr
+	for _, role := range roles {
+		identity, err := provisionWindowsSandboxPrincipalForSetup(config, role)
+		if err != nil {
+			_ = rollback()
+			return nil, err
 		}
-		return removeErr
-	}, nil
+		undo = append(undo, func() error { return removeWindowsSandboxPrincipalForSetup(config, role) })
+
+		// Both principals get the same filesystem access. They differ only in
+		// network reach, so granting the offline one less would make an approved
+		// network command see a different filesystem than an ordinary one.
+		plan, err := buildWindowsPrincipalACLPlan(windowsPrincipalACLInput{
+			PrincipalSID: identity.SID.String(),
+			WriteRoots:   filesystem.WriteRoots,
+			ReadRoots:    filesystem.ReadRoots,
+			DenyRead:     filesystem.DenyRead,
+		})
+		if err != nil {
+			_ = rollback()
+			return nil, err
+		}
+		revertACL, err := applyWindowsACLPlan(plan)
+		if err != nil {
+			_ = rollback()
+			return nil, err
+		}
+		// ACEs are reverted before the account they name is deleted, because
+		// removing the account first leaves ACEs naming a SID that no longer
+		// resolves, which is the orphaned residue this model exists to avoid.
+		// Appending after the removal closure puts it earlier in the reverse
+		// unwind, which is what gets that ordering.
+		undo = append(undo, revertACL)
+	}
+	return rollback, nil
 }
 
 // removeWindowsSandboxPrincipalForSetup retires a workspace's principal: secret
 // first, then the account. ACE revocation is the caller's job and must happen
 // before this, or ACEs naming a deleted SID are left behind.
-func removeWindowsSandboxPrincipalForSetup(config WindowsSandboxCommandConfig) error {
+func removeWindowsSandboxPrincipalForSetup(config WindowsSandboxCommandConfig, role windowsSandboxRole) error {
 	key := windowsSandboxWorkspaceKey(config.WorkspaceRoots)
-	username := windowsSandboxUserName(key)
+	username := windowsSandboxUserName(key, role)
 	secretPath, err := windowsSandboxSecretPath(config.SandboxHome, username)
 	if err != nil {
 		return err
@@ -258,7 +293,7 @@ func removeWindowsSandboxPrincipalForSetup(config WindowsSandboxCommandConfig) e
 	// which is the same orphaned residue the trustee-keyed ACE revocation exists
 	// to avoid. A principal that was never provisioned has no SID to resolve and
 	// nothing to revoke, so that case is not an error.
-	if identity, err := lookupWindowsSandboxIdentity(windowsSandboxWorkspaceKey(config.WorkspaceRoots)); err == nil {
+	if identity, err := lookupWindowsSandboxIdentity(key, role); err == nil {
 		if err := revokeWindowsSandboxLogonRights(identity.SID); err != nil {
 			return err
 		}
