@@ -300,5 +300,12 @@ func removeWindowsSandboxPrincipalForSetup(config WindowsSandboxCommandConfig, r
 	} else if !errors.Is(err, errWindowsSandboxIdentityUnavailable) {
 		return err
 	}
-	return removeWindowsSandboxIdentity(username)
+	// A foreign account under our derived name is left in place deliberately, and
+	// that is the goal state for teardown: no principal of ours exists under it.
+	// Surfacing it as a teardown failure would make setup rollback report an
+	// error for having correctly declined to delete somebody else's account.
+	if err := removeWindowsSandboxIdentity(username); err != nil && !errors.Is(err, errWindowsSandboxForeignAccountRetained) {
+		return err
+	}
+	return nil
 }
