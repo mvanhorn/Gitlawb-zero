@@ -163,7 +163,7 @@ func provisionWindowsSandboxPrincipalForSetup(config WindowsSandboxCommandConfig
 	// the password, including resetting a pre-existing account's, so from the
 	// moment it returns the stored secret is already stale. A failure before the
 	// path was computed then had nothing to remove.
-	secretPath, secretPathErr := windowsSandboxSecretPath(config.SandboxHome, windowsSandboxUserName(key))
+	secretPath, secretPathErr := windowsSandboxSecretPath(config.SandboxHome, windowsSandboxUserName(key, role))
 	undo := func() {
 		// Unconditionally, not only when this run wrote one. Provisioning has
 		// already replaced the account's password by the time any of this can

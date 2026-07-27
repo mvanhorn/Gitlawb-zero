@@ -555,11 +555,23 @@ func provisionWindowsSandboxIdentity(workspaceKey string, role windowsSandboxRol
 // A missing account is success, so teardown converges the same way provisioning
 // does. Requires an elevated caller.
 func removeWindowsSandboxIdentity(username string) error {
+	// Account names here are derived, not discovered, so this could be pointed at
+	// a name that happens to belong to somebody else's local account. Deleting a
+	// user is not a recoverable mistake, so ownership is proven before deleting
+	// rather than inferred from the name matching a pattern we generate.
+	managed, err := windowsSandboxUserIsManaged(username)
+	if err != nil {
+		return err
+	}
+	if !managed {
+		return nil
+	}
 	name, err := windows.UTF16PtrFromString(username)
 	if err != nil {
 		return err
 	}
 	status, _, _ := procNetUserDel.Call(0, uintptr(unsafe.Pointer(name)))
+	runtime.KeepAlive(name)
 	return netAPIStatus("NetUserDel", status, nerrUserNotFound)
 }
 
