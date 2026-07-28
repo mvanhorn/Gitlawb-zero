@@ -6,6 +6,30 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 aims to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once the first release is
 tagged. Until then, source builds report the version `dev`.
 
+## [0.6.0](https://github.com/Gitlawb/zero/compare/v0.5.0...v0.6.0) (2026-07-28)
+
+
+### Features
+
+* add persistent session goals ([#803](https://github.com/Gitlawb/zero/issues/803)) ([5d1869e](https://github.com/Gitlawb/zero/commit/5d1869e7bc193c97e07418b57b823905c1151d5d))
+* **skills:** report hash drift in skill info ([#795](https://github.com/Gitlawb/zero/issues/795)) ([9fbdc34](https://github.com/Gitlawb/zero/commit/9fbdc341551601c13434cf7b9b6f5e4ea4c483b1))
+
+
+### Bug Fixes
+
+* **cli:** include plugins info in shell completions ([#794](https://github.com/Gitlawb/zero/issues/794)) ([fa8734f](https://github.com/Gitlawb/zero/commit/fa8734f17927de8832dfe041e043cfb86f93d12a))
+* **config:** kill provider-command process tree via job object on Windows ([#690](https://github.com/Gitlawb/zero/issues/690)) ([5c58256](https://github.com/Gitlawb/zero/commit/5c58256abc29c185b449f8ce79647eb3fae61882))
+* **config:** stop billing provider-command fixtures to the 5s timeout ([#810](https://github.com/Gitlawb/zero/issues/810)) ([f5fa4ff](https://github.com/Gitlawb/zero/commit/f5fa4ffc64537897aa78a56edca36d8f1dacd021))
+* **cron:** reserve job IDs atomically ([#686](https://github.com/Gitlawb/zero/issues/686)) ([d9b882e](https://github.com/Gitlawb/zero/commit/d9b882eb0a94f38de8447cb54b57860ccd8ed053))
+* **lint:** resolve static analysis baseline ([#769](https://github.com/Gitlawb/zero/issues/769)) ([583e653](https://github.com/Gitlawb/zero/commit/583e6530bd849a8efcb2b88bbe8c297e8592e62c))
+* **sandbox:** add platform-specific write lock around grant state file ([#752](https://github.com/Gitlawb/zero/issues/752)) ([#755](https://github.com/Gitlawb/zero/issues/755)) ([88fb7b6](https://github.com/Gitlawb/zero/commit/88fb7b6192c1ac8173089967d5e9119f92d7a101))
+* **sandbox:** clarify scoped permission prompts ([#798](https://github.com/Gitlawb/zero/issues/798)) ([9fe02ae](https://github.com/Gitlawb/zero/commit/9fe02ae52e3234cb9dae76e0c5594a287ccbb52a))
+* **sandbox:** preserve user config and retry denied writes ([#801](https://github.com/Gitlawb/zero/issues/801)) ([81a5e6c](https://github.com/Gitlawb/zero/commit/81a5e6cb716ba4b7ecf7ff3ff261dfa51fd01098))
+* **tui:** fix rendering corruption over multipass + Windows Terminal ([#709](https://github.com/Gitlawb/zero/issues/709)) ([5bb1bc1](https://github.com/Gitlawb/zero/commit/5bb1bc11c3188dcea7709ff07c8b25dda3541de8))
+* **tui:** paste clipboard images with Ctrl+V ([#534](https://github.com/Gitlawb/zero/issues/534)) ([#807](https://github.com/Gitlawb/zero/issues/807)) ([ec3b822](https://github.com/Gitlawb/zero/commit/ec3b8225050eb62f0f41a9582ed2881d2f9dcc8e))
+* **tui:** reset quiet clock for new runs ([#799](https://github.com/Gitlawb/zero/issues/799)) ([a4a805a](https://github.com/Gitlawb/zero/commit/a4a805a6c82c51cb255e909bd87ca183c8805cf2))
+* **windows:** use PowerShell for command execution ([#804](https://github.com/Gitlawb/zero/issues/804)) ([518d2e5](https://github.com/Gitlawb/zero/commit/518d2e53ba3fa073090a9b41c278face85b59b64))
+
 ## [0.5.0](https://github.com/Gitlawb/zero/compare/v0.4.0...v0.5.0) (2026-07-22)
 
 
